@@ -13,10 +13,17 @@ class FlashcardCreate(FlashcardBase):
 class FlashcardResponse(FlashcardBase):
     id: int
     set_id: int
+    interval: int
+    repetition: int
+    ease_factor: float
+    next_review_date: datetime
 
     class Config:
         orm_mode = True
         from_attributes = True
+
+class FlashcardReviewRequest(BaseModel):
+    quality: int  # 1 to 5
 
 
 class FlashcardSetBase(BaseModel):
