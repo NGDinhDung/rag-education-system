@@ -1,12 +1,24 @@
 import json
 import random
-from typing import List
+from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.chunk import DocumentChunk
 from app.models.document import Document
 from app.models.study import FlashcardSet, Flashcard, QuizSet, QuizQuestion, QuizOption
 from app.services.llm_service import llm_service
+
+def _extract_list(data: Any) -> List[Dict]:
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        # Look for a list inside the dict
+        for v in data.values():
+            if isinstance(v, list):
+                return v
+        # If it's a single item object
+        return [data]
+    return []
 
 def generate_flashcards(db: Session, document_id: int) -> int:
     doc = db.query(Document).filter(Document.id == document_id).first()
@@ -15,7 +27,7 @@ def generate_flashcards(db: Session, document_id: int) -> int:
     
     # Get random chunks for context
     chunks = db.query(DocumentChunk).filter(DocumentChunk.document_id == document_id).order_by(func.random()).limit(10).all()
-    context_text = "\n\n".join([chunk.text_content for chunk in chunks])
+    context_text = "\n\n".join([chunk.content for chunk in chunks])
     
     prompt = f"""
 Dựa vào nội dung tài liệu sau, hãy tạo ra khoảng 10 flashcards (thẻ ghi nhớ) về các khái niệm quan trọng.
@@ -33,6 +45,7 @@ Chỉ xuất JSON, không xuất văn bản gì thêm.
     json_response = llm_service.generate_structured_json(prompt)
     try:
         data = json.loads(json_response)
+        items = _extract_list(data)
     except json.JSONDecodeError:
         raise ValueError("LLM did not return valid JSON for flashcards.")
     
@@ -42,8 +55,8 @@ Chỉ xuất JSON, không xuất văn bản gì thêm.
     db.commit()
     db.refresh(fc_set)
     
-    for item in data:
-        if "front" in item and "back" in item:
+    for item in items:
+        if isinstance(item, dict) and "front" in item and "back" in item:
             fc = Flashcard(set_id=fc_set.id, front=item["front"], back=item["back"])
             db.add(fc)
             
@@ -56,7 +69,7 @@ def generate_quiz(db: Session, document_id: int) -> int:
         raise ValueError("Document not found")
     
     chunks = db.query(DocumentChunk).filter(DocumentChunk.document_id == document_id).order_by(func.random()).limit(10).all()
-    context_text = "\n\n".join([chunk.text_content for chunk in chunks])
+    context_text = "\n\n".join([chunk.content for chunk in chunks])
     
     prompt = f"""
 Dựa vào nội dung tài liệu sau, hãy tạo khoảng 5 câu hỏi trắc nghiệm. Mỗi câu hỏi có 4 lựa chọn, trong đó chỉ có 1 lựa chọn đúng. Kèm theo giải thích tại sao đúng.
@@ -83,6 +96,7 @@ Chỉ xuất JSON, không xuất văn bản gì thêm.
     json_response = llm_service.generate_structured_json(prompt)
     try:
         data = json.loads(json_response)
+        items = _extract_list(data)
     except json.JSONDecodeError:
         raise ValueError("LLM did not return valid JSON for quiz.")
     
@@ -92,8 +106,8 @@ Chỉ xuất JSON, không xuất văn bản gì thêm.
     db.commit()
     db.refresh(qz_set)
     
-    for item in data:
-        if "question" in item and "options" in item:
+    for item in items:
+        if isinstance(item, dict) and "question" in item and "options" in item:
             qq = QuizQuestion(
                 set_id=qz_set.id,
                 question=item["question"],

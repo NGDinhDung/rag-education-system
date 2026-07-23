@@ -8,12 +8,13 @@ from app.models.study import FlashcardSet, QuizSet
 from app.schemas.study import FlashcardSetResponse, QuizSetResponse
 from app.services.study_service import generate_flashcards, generate_quiz
 
-router = APIRouter(prefix="/api/documents", tags=["Study"])
+router = APIRouter(prefix="/documents", tags=["Study"])
 
 @router.post("/{document_id}/flashcards", response_model=FlashcardSetResponse)
 def create_flashcards(document_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         fc_set_id = generate_flashcards(db, document_id)
+        db.expire_all()
         fc_set = db.query(FlashcardSet).filter(FlashcardSet.id == fc_set_id).first()
         return fc_set
     except Exception as e:
@@ -28,6 +29,7 @@ def get_flashcards(document_id: int, db: Session = Depends(get_db), current_user
 def create_quiz(document_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         qz_set_id = generate_quiz(db, document_id)
+        db.expire_all()
         qz_set = db.query(QuizSet).filter(QuizSet.id == qz_set_id).first()
         return qz_set
     except Exception as e:

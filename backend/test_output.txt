@@ -1,0 +1,8 @@
+{
+  "question": "Trái đất có hình dạng gì?",
+  "explanation": "Trái đất được cho là hình cầu, với đường kính khoảng 12.742 km",
+  "options": [
+    {"text": "Hình vuông", "is_correct": false},
+    {"text": "Hình tròn", "is_correct": true}
+  ]
+}
