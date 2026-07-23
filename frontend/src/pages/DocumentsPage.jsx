@@ -68,6 +68,7 @@ function DocumentsPage() {
   const [generatingStudy, setGeneratingStudy] = useState(null);
   const [flashcards, setFlashcards] = useState(null);
   const [quizzes, setQuizzes] = useState(null);
+  const [currentStudyDocId, setCurrentStudyDocId] = useState(null);
 
   const filteredDocuments = documents.filter(doc => 
     doc.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -242,6 +243,7 @@ function DocumentsPage() {
     setError("");
     try {
       const response = await axiosClient.post(`/documents/${docId}/flashcards`);
+      setCurrentStudyDocId(docId);
       setFlashcards(response.data.flashcards || response.data);
     } catch (err) {
       setError(err.response?.data?.detail || "Lỗi tạo flashcards.");
@@ -558,7 +560,7 @@ function DocumentsPage() {
       />
 
       {flashcards && (
-        <FlashcardViewer flashcards={flashcards} onClose={() => setFlashcards(null)} />
+        <FlashcardViewer flashcards={flashcards} documentId={currentStudyDocId} onClose={() => { setFlashcards(null); setCurrentStudyDocId(null); }} />
       )}
 
       {quizzes && (
