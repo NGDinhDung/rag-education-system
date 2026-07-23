@@ -255,7 +255,7 @@ function DocumentsPage() {
     setError("");
     try {
       const response = await axiosClient.post(`/documents/${docId}/quizzes`);
-      setQuizzes(response.data.quizzes || response.data);
+      setQuizzes(response.data.questions || response.data);
     } catch (err) {
       setError(err.response?.data?.detail || "Lỗi tạo quiz.");
     } finally {

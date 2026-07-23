@@ -511,60 +511,50 @@ function ChatPage() {
   // XỬ LÝ KHI NHẤN TRÍCH DẪN
   // =====================================================
 
-  const handleCitationClick = (
-    event,
-    href
-  ) => {
-    if (
-      !href ||
-      !href.startsWith(
-        "#source-"
-      )
-    ) {
+  const handleCitationClick = (event, href, message) => {
+    if (!href || !href.startsWith("#source-")) {
       return;
     }
-
     event.preventDefault();
 
-    const sourceId =
-      href.slice(1);
-
-    const sourceElement =
-      document.getElementById(
-        sourceId
-      );
-
-    if (!sourceElement) {
-      setError(
-        "Không tìm thấy nguồn tham khảo tương ứng."
-      );
-      return;
-    }
-
-    if (
-      sourceElement.tagName.toLowerCase() ===
-      "details"
-    ) {
-      sourceElement.open = true;
-    }
-
-    setHighlightedSourceId(
-      sourceId
+    const sourceId = href.slice(1);
+    const parts = href.split("-");
+    const sourceNumber = parseInt(parts[parts.length - 1], 10);
+    
+    const source = message?.sources?.find(
+      s => s.source_number === sourceNumber || s.sourceNumber === sourceNumber
     );
 
-    sourceElement.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
+    if (source && source.document_id != null) {
+      const pageNum = Number(source.page_number) > 0 ? Number(source.page_number) : 1;
+      setPdfPageNumber(pageNum);
+      
+      if (!pdfViewer.open || pdfViewer.documentId !== source.document_id) {
+        handleOpenSourceDocument(source);
+      }
+    } else {
+      const sourceElement = document.getElementById(sourceId);
+      if (!sourceElement) {
+        setError("Không tìm thấy nguồn tham khảo tương ứng.");
+        return;
+      }
 
-    window.setTimeout(() => {
-      setHighlightedSourceId(
-        (currentId) =>
-          currentId === sourceId
-            ? null
-            : currentId
-      );
-    }, 2200);
+      if (sourceElement.tagName.toLowerCase() === "details") {
+        sourceElement.open = true;
+      }
+
+      setHighlightedSourceId(sourceId);
+      sourceElement.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+
+      window.setTimeout(() => {
+        setHighlightedSourceId((currentId) =>
+          currentId === sourceId ? null : currentId
+        );
+      }, 2200);
+    }
   };
 
 
@@ -1353,12 +1343,11 @@ function ChatPage() {
                                               href
                                             }
                                             className="citation-link"
-                                            onClick={(
-                                              event
-                                            ) =>
+                                            onClick={(event) =>
                                               handleCitationClick(
                                                 event,
-                                                href
+                                                href,
+                                                message
                                               )
                                             }
                                             title="Xem nguồn tham khảo"

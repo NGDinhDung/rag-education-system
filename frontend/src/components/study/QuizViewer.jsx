@@ -25,10 +25,10 @@ export default function QuizViewer({ quizzes, onClose }) {
 
   const currentQuiz = quizzes[currentIndex];
 
-  const handleSelect = (optionKey) => {
+  const handleSelect = (optionKey, isCorrect) => {
     if (selectedAnswer !== null) return; // Prevent changing answer
     setSelectedAnswer(optionKey);
-    if (optionKey === currentQuiz.correct_answer || optionKey === currentQuiz.correctAnswer) {
+    if (isCorrect) {
       setScore(prev => prev + 1);
     }
   };
@@ -87,7 +87,12 @@ export default function QuizViewer({ quizzes, onClose }) {
           <div style={optionsContainerStyle}>
             {optionEntries.map(([key, value]) => {
               const isSelected = selectedAnswer === key;
-              const isCorrect = key === correctAns;
+              
+              // Determine correctness and text based on if value is an object or string
+              const isValueObject = typeof value === 'object' && value !== null;
+              const optionText = isValueObject ? value.text : value;
+              const isCorrect = isValueObject ? value.is_correct : (key === correctAns);
+              
               const showCorrectness = selectedAnswer !== null;
               
               let bg = '#f8fafc';
@@ -108,12 +113,12 @@ export default function QuizViewer({ quizzes, onClose }) {
               return (
                 <button 
                   key={key}
-                  onClick={() => handleSelect(key)}
+                  onClick={() => handleSelect(key, isCorrect)}
                   style={{...optionBtnStyle, backgroundColor: bg, border: border}}
                   disabled={selectedAnswer !== null}
                 >
                   <span style={optionKeyStyle}>{key}</span>
-                  <span style={{flex: 1, textAlign: 'left'}}>{value}</span>
+                  <span style={{flex: 1, textAlign: 'left'}}>{optionText}</span>
                   {showCorrectness && isCorrect && <CheckCircle size={20} color="#22c55e" />}
                   {showCorrectness && isSelected && !isCorrect && <XCircle size={20} color="#ef4444" />}
                 </button>
