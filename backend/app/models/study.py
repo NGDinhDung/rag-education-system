@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, List
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 
 from app.database import Base
 
@@ -21,7 +21,7 @@ class FlashcardSet(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    document = relationship("Document", backref="flashcard_sets")
+    document = relationship("Document", backref=backref("flashcard_sets", cascade="all, delete-orphan", passive_deletes=True))
     flashcards: Mapped[List["Flashcard"]] = relationship(
         back_populates="flashcard_set", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -52,7 +52,7 @@ class QuizSet(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    document = relationship("Document", backref="quiz_sets")
+    document = relationship("Document", backref=backref("quiz_sets", cascade="all, delete-orphan", passive_deletes=True))
     questions: Mapped[List["QuizQuestion"]] = relationship(
         back_populates="quiz_set", cascade="all, delete-orphan", passive_deletes=True
     )

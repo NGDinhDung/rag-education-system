@@ -30,15 +30,16 @@ def generate_flashcards(db: Session, document_id: int) -> int:
     context_text = "\n\n".join([chunk.content for chunk in chunks])
     
     prompt = f"""
-Dựa vào nội dung tài liệu sau, hãy tạo ra khoảng 10 flashcards (thẻ ghi nhớ) về các khái niệm quan trọng.
+Dựa vào nội dung tài liệu sau, hãy tạo ra khoảng 20 flashcards (thẻ ghi nhớ) về các khái niệm quan trọng.
 Nội dung:
 {context_text}
 
-Yêu cầu output PHẢI là một mảng JSON với cấu trúc:
-[
-  {{"front": "Mặt trước (câu hỏi/thuật ngữ)", "back": "Mặt sau (câu trả lời/định nghĩa)"}},
-  ...
-]
+Yêu cầu output PHẢI là một object JSON với cấu trúc:
+{{
+  "flashcards": [
+    {{"front": "Mặt trước (câu hỏi/thuật ngữ)", "back": "Mặt sau (câu trả lời/định nghĩa)"}}
+  ]
+}}
 Chỉ xuất JSON, không xuất văn bản gì thêm.
     """
     
@@ -72,24 +73,25 @@ def generate_quiz(db: Session, document_id: int) -> int:
     context_text = "\n\n".join([chunk.content for chunk in chunks])
     
     prompt = f"""
-Dựa vào nội dung tài liệu sau, hãy tạo khoảng 5 câu hỏi trắc nghiệm. Mỗi câu hỏi có 4 lựa chọn, trong đó chỉ có 1 lựa chọn đúng. Kèm theo giải thích tại sao đúng.
+Dựa vào nội dung tài liệu sau, hãy tạo khoảng 10 câu hỏi trắc nghiệm. Mỗi câu hỏi có 4 lựa chọn, trong đó chỉ có 1 lựa chọn đúng. Kèm theo giải thích tại sao đúng.
 Nội dung:
 {context_text}
 
-Yêu cầu output PHẢI là một mảng JSON với cấu trúc:
-[
-  {{
-    "question": "Nội dung câu hỏi",
-    "explanation": "Giải thích",
-    "options": [
-      {{"text": "Lựa chọn 1", "is_correct": true}},
-      {{"text": "Lựa chọn 2", "is_correct": false}},
-      {{"text": "Lựa chọn 3", "is_correct": false}},
-      {{"text": "Lựa chọn 4", "is_correct": false}}
-    ]
-  }},
-  ...
-]
+Yêu cầu output PHẢI là một object JSON với cấu trúc:
+{{
+  "questions": [
+    {{
+      "question": "Nội dung câu hỏi",
+      "explanation": "Giải thích",
+      "options": [
+        {{"text": "Lựa chọn 1", "is_correct": true}},
+        {{"text": "Lựa chọn 2", "is_correct": false}},
+        {{"text": "Lựa chọn 3", "is_correct": false}},
+        {{"text": "Lựa chọn 4", "is_correct": false}}
+      ]
+    }}
+  ]
+}}
 Chỉ xuất JSON, không xuất văn bản gì thêm.
     """
     

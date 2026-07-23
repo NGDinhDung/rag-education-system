@@ -28,6 +28,7 @@ def split_document(
     chunks = splitter.split_text(text)
 
     result = []
+    current_page = 1
     for chunk in chunks:
         # Tìm page number từ marker [Trang X] trong chunk
         page_matches = re.findall(
@@ -35,15 +36,12 @@ def split_document(
             chunk,
         )
 
-        page_number = (
-            int(page_matches[0])
-            if page_matches
-            else None
-        )
+        if page_matches:
+            current_page = int(page_matches[0])
 
         result.append({
             "content": chunk,
-            "page_number": page_number,
+            "page_number": current_page,
         })
 
     return result
