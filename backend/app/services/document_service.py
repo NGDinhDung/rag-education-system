@@ -12,7 +12,7 @@ ALLOWED_EXTENSIONS = {
     ".txt",
 }
 
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 20MB
 
 
 def save_uploaded_file(file: UploadFile):
@@ -41,7 +41,7 @@ def save_uploaded_file(file: UploadFile):
 
         raise HTTPException(
             status_code=400,
-            detail="File vượt quá 20MB.",
+            detail="File vượt quá 50MB.",
         )
 
     return {
