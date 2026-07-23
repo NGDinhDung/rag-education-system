@@ -252,6 +252,26 @@ function DocumentsPage() {
     }
   };
 
+  const handleViewFlashcards = async (docId) => {
+    setGeneratingStudy(docId);
+    setError("");
+    try {
+      const response = await axiosClient.get(`/documents/${docId}/flashcards`);
+      const sets = response.data;
+      if (!sets || sets.length === 0) {
+        setError("Chưa có flashcard nào. Vui lòng ấn 'Tạo Flashcards' trước.");
+        return;
+      }
+      const allFlashcards = sets.reduce((acc, set) => [...acc, ...(set.flashcards || [])], []);
+      setCurrentStudyDocId(docId);
+      setFlashcards(allFlashcards);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Lỗi tải flashcards.");
+    } finally {
+      setGeneratingStudy(null);
+    }
+  };
+
   const handleGenerateQuiz = async (docId) => {
     setGeneratingStudy(docId);
     setError("");
@@ -260,6 +280,25 @@ function DocumentsPage() {
       setQuizzes(response.data.questions || response.data);
     } catch (err) {
       setError(err.response?.data?.detail || "Lỗi tạo quiz.");
+    } finally {
+      setGeneratingStudy(null);
+    }
+  };
+
+  const handleViewQuizzes = async (docId) => {
+    setGeneratingStudy(docId);
+    setError("");
+    try {
+      const response = await axiosClient.get(`/documents/${docId}/quizzes`);
+      const sets = response.data;
+      if (!sets || sets.length === 0) {
+        setError("Chưa có quiz nào. Vui lòng ấn 'Tạo Quiz' trước.");
+        return;
+      }
+      const allQuizzes = sets.reduce((acc, set) => [...acc, ...(set.questions || [])], []);
+      setQuizzes(allQuizzes);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Lỗi tải quiz.");
     } finally {
       setGeneratingStudy(null);
     }
@@ -479,22 +518,36 @@ function DocumentsPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', padding: '12px 16px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '12px 16px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
                   <button 
                     onClick={() => handleGenerateFlashcards(documentItem.id)}
                     disabled={generatingStudy === documentItem.id}
-                    style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: '13px' }}
+                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: '12px' }}
                   >
                     {generatingStudy === documentItem.id ? <LoaderCircle size={14} className="spin" style={{marginRight: '4px'}}/> : null}
-                    Tạo Flashcards
+                    + Tạo Flashcard
                   </button>
                   <button 
                     onClick={() => handleGenerateQuiz(documentItem.id)}
                     disabled={generatingStudy === documentItem.id}
-                    style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: '13px' }}
+                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: '12px' }}
                   >
                     {generatingStudy === documentItem.id ? <LoaderCircle size={14} className="spin" style={{marginRight: '4px'}}/> : null}
-                    Tạo Quiz
+                    + Tạo Quiz
+                  </button>
+                  <button 
+                    onClick={() => handleViewFlashcards(documentItem.id)}
+                    disabled={generatingStudy === documentItem.id}
+                    style={{ padding: '8px', borderRadius: '4px', border: 'none', background: '#eff6ff', color: '#2563eb', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
+                  >
+                    Xem Flashcard
+                  </button>
+                  <button 
+                    onClick={() => handleViewQuizzes(documentItem.id)}
+                    disabled={generatingStudy === documentItem.id}
+                    style={{ padding: '8px', borderRadius: '4px', border: 'none', background: '#eff6ff', color: '#2563eb', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
+                  >
+                    Xem Quiz
                   </button>
                 </div>
 
