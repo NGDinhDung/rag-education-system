@@ -516,39 +516,39 @@ function DocumentsPage() {
                       ID: {documentItem.id}
                     </span>
                   </div>
-                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '12px 16px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                  <button 
-                    onClick={() => handleGenerateFlashcards(documentItem.id)}
-                    disabled={generatingStudy === documentItem.id}
-                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: '12px' }}
-                  >
-                    {generatingStudy === documentItem.id ? <LoaderCircle size={14} className="spin" style={{marginRight: '4px'}}/> : null}
-                    + Tạo Flashcard
-                  </button>
-                  <button 
-                    onClick={() => handleGenerateQuiz(documentItem.id)}
-                    disabled={generatingStudy === documentItem.id}
-                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: '12px' }}
-                  >
-                    {generatingStudy === documentItem.id ? <LoaderCircle size={14} className="spin" style={{marginRight: '4px'}}/> : null}
-                    + Tạo Quiz
-                  </button>
-                  <button 
-                    onClick={() => handleViewFlashcards(documentItem.id)}
-                    disabled={generatingStudy === documentItem.id}
-                    style={{ padding: '8px', borderRadius: '4px', border: 'none', background: '#eff6ff', color: '#2563eb', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
-                  >
-                    Xem Flashcard
-                  </button>
-                  <button 
-                    onClick={() => handleViewQuizzes(documentItem.id)}
-                    disabled={generatingStudy === documentItem.id}
-                    style={{ padding: '8px', borderRadius: '4px', border: 'none', background: '#eff6ff', color: '#2563eb', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
-                  >
-                    Xem Quiz
-                  </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '16px' }}>
+                    <button 
+                      onClick={() => handleGenerateFlashcards(documentItem.id)}
+                      disabled={generatingStudy === documentItem.id}
+                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      {generatingStudy === documentItem.id ? <LoaderCircle size={14} className="spin" style={{marginRight: '4px'}}/> : null}
+                      + Tạo Flashcard
+                    </button>
+                    <button 
+                      onClick={() => handleGenerateQuiz(documentItem.id)}
+                      disabled={generatingStudy === documentItem.id}
+                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      {generatingStudy === documentItem.id ? <LoaderCircle size={14} className="spin" style={{marginRight: '4px'}}/> : null}
+                      + Tạo Quiz
+                    </button>
+                    <button 
+                      onClick={() => handleViewFlashcards(documentItem.id)}
+                      disabled={generatingStudy === documentItem.id}
+                      style={{ padding: '8px', borderRadius: '4px', border: 'none', background: '#eff6ff', color: '#2563eb', cursor: 'pointer', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      Xem Flashcard
+                    </button>
+                    <button 
+                      onClick={() => handleViewQuizzes(documentItem.id)}
+                      disabled={generatingStudy === documentItem.id}
+                      style={{ padding: '8px', borderRadius: '4px', border: 'none', background: '#eff6ff', color: '#2563eb', cursor: 'pointer', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      Xem Quiz
+                    </button>
+                  </div>
                 </div>
 
                 <button
