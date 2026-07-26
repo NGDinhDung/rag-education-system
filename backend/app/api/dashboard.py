@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_admin_user
 from app.database import get_db
 from app.models.chunk import DocumentChunk
 from app.models.conversation import Conversation
@@ -24,87 +24,55 @@ router = APIRouter(
 @router.get("/stats")
 def get_dashboard_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    admin_user: User = Depends(get_admin_user),
 ):
     """
-    Trả về số liệu Dashboard của người dùng đang đăng nhập.
-
-    Bao gồm:
-    - Tổng số tài liệu
-    - Tổng số chunk
-    - Tổng số cuộc trò chuyện
-    - Tổng số câu hỏi
-    - Số câu hỏi trong 7 ngày gần nhất
-    - Top 5 tài liệu được trích dẫn nhiều nhất
-    - Model Ollama hiện tại
-    - Temperature hiện tại
+    Trả về số liệu Dashboard toàn hệ thống cho Admin.
     """
 
     # =====================================================
-    # 1. Các truy vấn con thuộc người dùng hiện tại
-    # =====================================================
-
-    document_ids_query = (
-        db.query(Document.id)
-        .filter(Document.user_id == current_user.id)
-    )
-
-    conversation_ids_query = (
-        db.query(Conversation.id)
-        .filter(Conversation.user_id == current_user.id)
-    )
-
-    # =====================================================
-    # 2. Tổng số tài liệu
+    # 1. Tổng số tài liệu
     # =====================================================
 
     total_documents = (
         db.query(func.count(Document.id))
-        .filter(Document.user_id == current_user.id)
         .scalar()
         or 0
     )
 
     # =====================================================
-    # 3. Tổng số chunk
+    # 2. Tổng số chunk
     # =====================================================
 
     total_chunks = (
         db.query(func.count(DocumentChunk.id))
-        .filter(
-            DocumentChunk.document_id.in_(document_ids_query)
-        )
         .scalar()
         or 0
     )
 
     # =====================================================
-    # 4. Tổng số cuộc trò chuyện
+    # 3. Tổng số cuộc trò chuyện
     # =====================================================
 
     total_conversations = (
         db.query(func.count(Conversation.id))
-        .filter(Conversation.user_id == current_user.id)
         .scalar()
         or 0
     )
 
     # =====================================================
-    # 5. Tổng số câu hỏi của người dùng
+    # 4. Tổng số câu hỏi của người dùng
     # =====================================================
 
     total_questions = (
         db.query(func.count(Message.id))
-        .filter(
-            Message.conversation_id.in_(conversation_ids_query),
-            Message.role == "user",
-        )
+        .filter(Message.role == "user")
         .scalar()
         or 0
     )
 
     # =====================================================
-    # 6. Thống kê câu hỏi trong 7 ngày gần nhất
+    # 5. Thống kê câu hỏi trong 7 ngày gần nhất
     # =====================================================
 
     today = datetime.now(timezone.utc).date()
@@ -122,7 +90,6 @@ def get_dashboard_stats(
             func.count(Message.id).label("total"),
         )
         .filter(
-            Message.conversation_id.in_(conversation_ids_query),
             Message.role == "user",
             Message.created_at >= start_datetime,
         )
@@ -158,7 +125,7 @@ def get_dashboard_stats(
         )
 
     # =====================================================
-    # 7. Top tài liệu được AI sử dụng làm nguồn
+    # 6. Top tài liệu được AI sử dụng làm nguồn
     # =====================================================
 
     top_document_rows = (
@@ -171,14 +138,6 @@ def get_dashboard_stats(
         .join(
             MessageSource,
             MessageSource.document_id == Document.id,
-        )
-        .join(
-            Message,
-            Message.id == MessageSource.message_id,
-        )
-        .filter(
-            Document.user_id == current_user.id,
-            Message.conversation_id.in_(conversation_ids_query),
         )
         .group_by(
             Document.id,
@@ -204,7 +163,7 @@ def get_dashboard_stats(
     ]
 
     # =====================================================
-    # 8. Trả kết quả
+    # 7. Trả kết quả
     # =====================================================
 
     return {
