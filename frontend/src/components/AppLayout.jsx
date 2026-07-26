@@ -5,6 +5,8 @@ import {
   LogOut,
   MessageSquareText,
   Users,
+  ShieldAlert,
+  Settings,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import axiosClient from "../api/axiosClient";
@@ -74,6 +76,28 @@ function AppLayout({ children }) {
               >
                 <Users size={20} />
                 Quản lý người dùng
+              </NavLink>
+              <NavLink
+                to="/admin/audit"
+                className={({ isActive }) =>
+                  isActive
+                    ? "nav-item active"
+                    : "nav-item"
+                }
+              >
+                <ShieldAlert size={20} />
+                Lịch sử Chat
+              </NavLink>
+              <NavLink
+                to="/admin/settings"
+                className={({ isActive }) =>
+                  isActive
+                    ? "nav-item active"
+                    : "nav-item"
+                }
+              >
+                <Settings size={20} />
+                Cài đặt Hệ thống
               </NavLink>
             </div>
           )}

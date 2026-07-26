@@ -16,6 +16,10 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from "recharts";
 
 import axiosClient from "../api/axiosClient";
@@ -31,7 +35,11 @@ const EMPTY_STATS = {
   temperature: 0,
   questions_by_day: [],
   top_documents: [],
+  web_search_count: 0,
+  local_search_count: 0,
 };
+
+const PIE_COLORS = ["#3b82f6", "#10b981"]; // Xanh dương (Web), Xanh lá (Local)
 
 function StatCard({
   icon,
@@ -149,6 +157,13 @@ function DashboardPage() {
       stats.questions / stats.conversations
     ).toFixed(1);
   }, [stats.questions, stats.conversations]);
+
+  const searchSourceData = useMemo(() => {
+    return [
+      { name: "Web Search", value: stats.web_search_count || 0 },
+      { name: "Tài liệu Local", value: stats.local_search_count || 0 },
+    ];
+  }, [stats.web_search_count, stats.local_search_count]);
 
   if (loading) {
     return (
@@ -473,6 +488,47 @@ function DashboardPage() {
                 <div className="dashboard-empty-state">
                   Chưa có tài liệu nào được trích dẫn.
                 </div>
+              )}
+            </div>
+          </article>
+          
+          {/* Biểu đồ Nguồn tìm kiếm (Web vs Local) */}
+          <article className="dashboard-panel">
+            <span className="dashboard-panel-kicker">
+              Phân tích Nguồn Trả lời
+            </span>
+
+            <h2>Web Search vs Local Documents</h2>
+            
+            <div style={{ height: '300px', width: '100%', marginTop: '16px' }}>
+              {(stats.web_search_count === 0 && stats.local_search_count === 0) ? (
+                <div className="dashboard-empty-state">
+                  Chưa có dữ liệu nguồn.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={searchSourceData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={90}
+                      fill="#8884d8"
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {searchSourceData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      formatter={(value) => [`${value} trích dẫn`, "Số lượng"]}
+                      contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0" }}
+                    />
+                    <Legend verticalAlign="bottom" height={36} />
+                  </PieChart>
+                </ResponsiveContainer>
               )}
             </div>
           </article>

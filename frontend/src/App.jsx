@@ -12,6 +12,8 @@ import DocumentsPage from "./pages/DocumentsPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import UserManagementPage from "./pages/UserManagementPage";
+import AdminAuditLogPage from "./pages/AdminAuditLogPage";
+import AdminSettingsPage from "./pages/AdminSettingsPage";
 
 function App() {
   return (
@@ -43,6 +45,24 @@ function App() {
           element={
             <ProtectedRoute>
               <UserManagementPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/audit"
+          element={
+            <ProtectedRoute>
+              <AdminAuditLogPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/settings"
+          element={
+            <ProtectedRoute>
+              <AdminSettingsPage />
             </ProtectedRoute>
           }
         />

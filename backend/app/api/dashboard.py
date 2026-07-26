@@ -163,7 +163,25 @@ def get_dashboard_stats(
     ]
 
     # =====================================================
-    # 7. Trả kết quả
+    # 7. Thống kê nguồn Web Search vs Local
+    # =====================================================
+
+    total_web_sources = (
+        db.query(func.count(MessageSource.id))
+        .filter(MessageSource.vector_id.startswith("web-"))
+        .scalar()
+        or 0
+    )
+
+    total_local_sources = (
+        db.query(func.count(MessageSource.id))
+        .filter(~MessageSource.vector_id.startswith("web-") | MessageSource.vector_id.is_(None))
+        .scalar()
+        or 0
+    )
+
+    # =====================================================
+    # 8. Trả kết quả
     # =====================================================
 
     return {
@@ -175,4 +193,6 @@ def get_dashboard_stats(
         "temperature": llm_service.temperature,
         "questions_by_day": questions_by_day,
         "top_documents": top_documents,
+        "web_search_count": int(total_web_sources),
+        "local_search_count": int(total_local_sources),
     }

@@ -15,6 +15,8 @@ from app.database import Base, engine, get_db
 from app.routers import chat_history
 from app.api.dashboard import router as dashboard_router
 from app.api.study import router as study_router
+from app.api.admin_audit import router as admin_audit_router
+from app.api.admin_settings import router as admin_settings_router
 # Tạo các bảng chưa tồn tại trong PostgreSQL
 Base.metadata.create_all(bind=engine)
 
@@ -44,6 +46,8 @@ app.include_router(chat_router)
 app.include_router(chat_history.router)
 app.include_router(dashboard_router)
 app.include_router(study_router)
+app.include_router(admin_audit_router)
+app.include_router(admin_settings_router)
 
 import logging
 
