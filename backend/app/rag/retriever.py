@@ -1,4 +1,6 @@
 from typing import Any
+import numpy as np
+from rank_bm25 import BM25Okapi
 
 from app.rag.vectordb import vector_db
 
@@ -9,18 +11,12 @@ class DocumentRetriever:
         query: str,
         document_id: int | None = None,
         limit: int = 5,
-        min_score: float = 0.40,
+        min_score: float = 0.30,
         candidate_multiplier: int = 3,
     ) -> list[dict[str, Any]]:
         """
-        Tìm các chunk liên quan nhất với câu hỏi.
-
-        Quy trình:
-        1. Lấy nhiều chunk ứng viên từ ChromaDB.
-        2. Chuyển cosine distance thành relevance score.
-        3. Loại chunk có score thấp hơn min_score.
-        4. Sắp xếp theo score giảm dần.
-        5. Trả về tối đa số lượng chunk theo limit.
+        Tìm các chunk liên quan bằng Hybrid Search (Vector + BM25)
+        và Reciprocal Rank Fusion (RRF).
         """
         query = " ".join(query.strip().split())
 
@@ -30,115 +26,103 @@ class DocumentRetriever:
         if limit <= 0:
             raise ValueError("limit phải lớn hơn 0.")
 
-        if candidate_multiplier <= 0:
-            raise ValueError(
-                "candidate_multiplier phải lớn hơn 0."
-            )
+        # Lấy tất cả vector của document (hoặc toàn bộ) để rank
+        if document_id is not None:
+            all_data = vector_db.get_document_vectors(document_id=document_id)
+        else:
+            all_data = vector_db.collection.get(include=["documents", "metadatas"])
+            
+        ids = all_data.get("ids", [])
+        documents = all_data.get("documents", [])
+        metadatas = all_data.get("metadatas", [])
+        
+        if not ids:
+            return []
 
-        if not 0.0 <= min_score <= 1.0:
-            raise ValueError(
-                "min_score phải nằm trong khoảng từ 0 đến 1."
-            )
-
-        candidate_limit = max(
-            limit,
-            limit * candidate_multiplier,
-        )
-
-        results = vector_db.search(
+        # 1. BM25 Ranking
+        tokenized_corpus = [doc.lower().split() for doc in documents]
+        bm25 = BM25Okapi(tokenized_corpus)
+        tokenized_query = query.lower().split()
+        bm25_scores = bm25.get_scores(tokenized_query)
+        
+        # 2. Vector Ranking (Lấy top nhiều ứng viên)
+        candidate_limit = max(limit * candidate_multiplier, len(ids))
+        vector_results = vector_db.search(
             query=query,
             document_id=document_id,
             limit=candidate_limit,
         )
-
-        ids = results.get("ids") or [[]]
-        documents = results.get("documents") or [[]]
-        metadatas = results.get("metadatas") or [[]]
-        distances = results.get("distances") or [[]]
-
-        ids_list = ids[0] if ids else []
-        documents_list = documents[0] if documents else []
-        metadatas_list = metadatas[0] if metadatas else []
-        distances_list = distances[0] if distances else []
-
-        retrieved_chunks: list[dict[str, Any]] = []
-
-        print("\n========== KẾT QUẢ RETRIEVER ==========")
+        
+        vector_ids = vector_results.get("ids", [[]])[0]
+        vector_distances = vector_results.get("distances", [[]])[0]
+        
+        vector_score_map = {}
+        for vid, dist in zip(vector_ids, vector_distances):
+            score = max(0.0, 1.0 - float(dist))
+            vector_score_map[vid] = score
+            
+        # 3. RRF (Reciprocal Rank Fusion)
+        k = 60
+        bm25_ranked_indices = np.argsort(bm25_scores)[::-1]
+        bm25_rank_map = {ids[idx]: rank for rank, idx in enumerate(bm25_ranked_indices)}
+        
+        vector_ranked_ids = sorted(vector_score_map.keys(), key=lambda x: vector_score_map[x], reverse=True)
+        vector_rank_map = {vid: rank for rank, vid in enumerate(vector_ranked_ids)}
+        
+        hybrid_scores = []
+        for i, vid in enumerate(ids):
+            bm25_rank = bm25_rank_map.get(vid, len(ids))
+            vector_rank = vector_rank_map.get(vid, len(ids))
+            
+            rrf_score = 1.0 / (k + bm25_rank) + 1.0 / (k + vector_rank)
+            v_score = vector_score_map.get(vid, 0.0)
+            
+            hybrid_scores.append({
+                "vector_id": str(vid),
+                "content": documents[i],
+                "document_id": metadatas[i].get("document_id"),
+                "chunk_id": metadatas[i].get("chunk_id"),
+                "chunk_index": metadatas[i].get("chunk_index"),
+                "page_number": metadatas[i].get("page_number"),
+                "vector_score": v_score,
+                "rrf_score": rrf_score
+            })
+            
+        # Lọc các chunk có điểm vector quá thấp
+        filtered = [x for x in hybrid_scores if x["vector_score"] >= min_score]
+        filtered.sort(key=lambda x: x["rrf_score"], reverse=True)
+        
+        selected = filtered[:limit]
+        
+        final_results = []
+        for x in selected:
+            final_results.append({
+                "vector_id": x["vector_id"],
+                "content": x["content"],
+                "document_id": x["document_id"],
+                "chunk_id": x["chunk_id"],
+                "chunk_index": x["chunk_index"],
+                "page_number": x["page_number"],
+                "distance": 1.0 - x["vector_score"],
+                "score": x["vector_score"]
+            })
+            
+        print("\n========== KẾT QUẢ HYBRID SEARCH ==========")
         print(f"Câu hỏi: {query}")
-        print(f"document_id: {document_id}")
-        print(f"min_score: {min_score}")
-        print(f"Số ứng viên Chroma trả về: {len(ids_list)}")
+        print(f"Số ứng viên vượt qua min_score ({min_score}): {len(filtered)}")
+        for x in final_results:
+            print(f"score={x['score']:.4f} | chunk_index={x['chunk_index']} | document_id={x['document_id']}")
+        print("===========================================\n")
 
-        for vector_id, content, metadata, distance in zip(
-            ids_list,
-            documents_list,
-            metadatas_list,
-            distances_list,
-        ):
-            metadata = metadata or {}
-            content = str(content or "").strip()
-
-            if not content:
-                continue
-
-            distance_value = float(distance)
-
-            # Collection ChromaDB đang dùng cosine distance.
-            # Cosine distance càng nhỏ thì nội dung càng liên quan.
-            score = 1.0 - distance_value
-            score = max(0.0, min(1.0, score))
-
-            print(
-                f"score={score:.4f} | "
-                f"distance={distance_value:.4f} | "
-                f"document_id={metadata.get('document_id')} | "
-                f"chunk_id={metadata.get('chunk_id')} | "
-                f"chunk_index={metadata.get('chunk_index')}"
-            )
-
-            if score < min_score:
-                continue
-
-            retrieved_chunks.append(
-                {
-                    "vector_id": str(vector_id),
-                    "content": content,
-                    "document_id": metadata.get("document_id"),
-                    "chunk_id": metadata.get("chunk_id"),
-                    "chunk_index": metadata.get("chunk_index"),
-                    "page_number": metadata.get("page_number"),
-                    "distance": distance_value,
-                    "score": score,
-                }
-            )
-
-        retrieved_chunks.sort(
-            key=lambda chunk: chunk["score"],
-            reverse=True,
-        )
-
-        selected_chunks = retrieved_chunks[:limit]
-
-        print(
-            f"Số chunk đạt ngưỡng: {len(retrieved_chunks)}"
-        )
-        print(
-            f"Số chunk được chọn: {len(selected_chunks)}"
-        )
-        print("========================================\n")
-
-        return selected_chunks
+        return final_results
 
     def build_context(
         self,
         query: str,
         document_id: int | None = None,
         limit: int = 5,
-        min_score: float = 0.40,
+        min_score: float = 0.30,
     ) -> str:
-        """
-        Tìm kiếm và ghép các chunk thành context cho LLM.
-        """
         chunks = self.retrieve(
             query=query,
             document_id=document_id,
@@ -150,30 +134,18 @@ class DocumentRetriever:
             return ""
 
         context_parts: list[str] = []
-
-        for index, chunk in enumerate(
-            chunks,
-            start=1,
-        ):
+        for index, chunk in enumerate(chunks, start=1):
             source_info = (
                 f"[Nguồn {index} | "
                 f"document_id={chunk['document_id']} | "
                 f"chunk_index={chunk['chunk_index']} | "
                 f"score={chunk['score']:.4f}"
             )
-
             if chunk["page_number"] is not None:
-                source_info += (
-                    f" | page={chunk['page_number']}"
-                )
-
+                source_info += f" | page={chunk['page_number']}"
             source_info += "]"
-
-            context_parts.append(
-                f"{source_info}\n{chunk['content']}"
-            )
+            context_parts.append(f"{source_info}\n{chunk['content']}")
 
         return "\n\n".join(context_parts)
-
 
 retriever = DocumentRetriever()

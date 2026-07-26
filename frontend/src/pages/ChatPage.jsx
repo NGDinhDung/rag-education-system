@@ -162,18 +162,29 @@ function ChatPage() {
 
 
   // =====================================================
-  // TỰ ĐỘNG CUỘN XUỐNG CUỐI
+  // TỰ ĐỘNG CUỘN XUỐNG CUỐI THÔNG MINH
   // =====================================================
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-    });
-  }, [
-    messages,
-    sending,
-    loadingSession,
-  ]);
+    const container = document.querySelector(".chat-messages");
+    if (!container) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
+    // Cuộn mượt khi vừa bấm gửi
+    if (sending) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        return;
+    }
+
+    // Khi đang stream, nếu ở sát đáy thì dùng cuộn tức thì để tránh giật lag animation
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    
+    if (isNearBottom) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [messages, sending, loadingSession]);
 
 
   // =====================================================
@@ -740,155 +751,130 @@ function ChatPage() {
 
     try {
       const payload = {
-        question:
-          trimmedQuestion,
-
-        document_id:
-          selectedDocumentId
-            ? Number(
-                selectedDocumentId
-              )
-            : null,
-
-        conversation_id:
-          activeSessionId
-            ? Number(
-                activeSessionId
-              )
-            : null,
-
+        question: trimmedQuestion,
+        document_id: selectedDocumentId ? Number(selectedDocumentId) : null,
+        conversation_id: activeSessionId ? Number(activeSessionId) : null,
         limit: 5,
       };
 
-      const response =
-        await axiosClient.post(
-          "/chat",
-          payload
-        );
+      const token = localStorage.getItem("access_token") || "";
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
-      const returnedSessionId =
-        response.data
-          ?.conversation_id ??
-        response.data?.session_id ??
-        response.data
-          ?.chat_session_id ??
-        null;
+      const response = await fetch(`${baseUrl}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
 
-      if (returnedSessionId) {
-        setActiveSessionId(
-          Number(
-            returnedSessionId
-          )
-        );
+      if (response.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.href = "/login";
+          return;
       }
 
-      const normalizedSources =
-        normalizeSources(
-          response.data?.sources
-        );
+      if (!response.ok) {
+        throw new Error("Không thể kết nối đến máy chủ.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
 
       const assistantMessage = {
-        id:
-          response.data
-            ?.message_id ??
-          crypto.randomUUID(),
-
+        id: crypto.randomUUID(),
         role: "assistant",
-
-        content:
-          response.data?.answer ||
-          "Không nhận được câu trả lời từ hệ thống.",
-
-        sources:
-          normalizedSources,
-
-        responseTime:
-          response.data
-            ?.response_time_seconds ??
-          null,
-
-        chunkCount:
-          response.data
-            ?.chunk_count ??
-          normalizedSources.length,
-
-        documentCount:
-          response.data
-            ?.document_count ??
-          new Set(
-            normalizedSources
-              .map(
-                (source) =>
-                  source.document_id
-              )
-              .filter(
-                (documentId) =>
-                  documentId != null
-              )
-          ).size,
-
-        model:
-          response.data?.model ??
-          null,
-
-        temperature:
-          response.data
-            ?.temperature ??
-          null,
-
-        createdAt:
-          new Date().toISOString(),
-
+        content: "",
+        sources: [],
+        createdAt: new Date().toISOString(),
+        responseTime: null,
+        chunkCount: 0,
+        documentCount: 0,
+        model: null,
+        temperature: null,
         isError: false,
       };
 
-      setMessages(
-        (currentMessages) => [
-          ...currentMessages,
-          assistantMessage,
-        ]
-      );
+      let hasAddedMessage = false;
 
-      setSessionRefreshKey(
-        (currentKey) =>
-          currentKey + 1
-      );
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+        
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (!hasAddedMessage) {
+                  hasAddedMessage = true;
+                  setSending(false);
+                  setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+              }
+
+              if (data.type === "metadata") {
+                if (data.conversation_id) {
+                    setActiveSessionId(data.conversation_id);
+                }
+                assistantMessage.id = data.message_id || assistantMessage.id;
+                assistantMessage.sources = normalizeSources(data.sources);
+                assistantMessage.model = data.model;
+                assistantMessage.chunkCount = assistantMessage.sources.length;
+                assistantMessage.documentCount = new Set(
+                  assistantMessage.sources.map(s => s.document_id).filter(id => id != null)
+                ).size;
+                
+                setMessages((current) => current.map((m) => 
+                  m.id === assistantMessage.id ? { ...assistantMessage } : m
+                ));
+              } else if (data.type === "chunk") {
+                assistantMessage.content += data.content;
+                
+                // Nếu AI từ chối trả lời vì thiếu thông tin, ẩn nguồn đi
+                const contentLower = assistantMessage.content.toLowerCase();
+                if (contentLower.includes("tài liệu hiện tại chưa cung cấp đủ thông tin")) {
+                    assistantMessage.sources = [];
+                    assistantMessage.chunkCount = 0;
+                    assistantMessage.documentCount = 0;
+                }
+                
+                setMessages((current) => current.map((m) => 
+                  m.id === assistantMessage.id ? { ...assistantMessage } : m
+                ));
+              } else if (data.type === "error") {
+                setError(data.content);
+              }
+            } catch (e) {
+                // Bỏ qua lỗi JSON.parse do chunk bị chia cắt
+            }
+          }
+        }
+      }
+
+      setSessionRefreshKey((currentKey) => currentKey + 1);
+
     } catch (requestError) {
-      const detail =
-        requestError.response?.data
-          ?.detail ||
-        "Không thể xử lý câu hỏi.";
-
-      setError(detail);
-
-      setMessages(
-        (currentMessages) => [
-          ...currentMessages,
-          {
-            id:
-              crypto.randomUUID(),
-
-            role:
-              "assistant",
-
-            content:
-              `Đã xảy ra lỗi: ${detail}`,
-
-            sources: [],
-
-            isError: true,
-
-            createdAt:
-              new Date().toISOString(),
-
-            responseTime: null,
-            chunkCount: 0,
-            documentCount: 0,
-            model: null,
-            temperature: null,
-          },
-        ]
-      );
+      setError("Không thể xử lý câu hỏi.");
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `Đã xảy ra lỗi kết nối.`,
+          sources: [],
+          isError: true,
+          createdAt: new Date().toISOString(),
+          responseTime: null,
+          chunkCount: 0,
+          documentCount: 0,
+          model: null,
+          temperature: null,
+        },
+      ]);
     } finally {
       setSending(false);
     }

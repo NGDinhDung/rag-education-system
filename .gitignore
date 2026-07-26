@@ -26,3 +26,19 @@ Thumbs.db
 
 # Logs
 *.log
+
+# ChromaDB
+backend/chroma_data/
+chroma_data/
+
+# Frontend (React/Vite)
+frontend/node_modules/
+node_modules/
+frontend/dist/
+dist/
+.vite/
+
+# Archives and binaries
+*.zip
+*.tar.gz
+*.exe

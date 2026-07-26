@@ -58,6 +58,27 @@ class RAGPipeline:
         if not isinstance(chunks, list):
             chunks = []
 
+        if not chunks:
+            print("Không tìm thấy trong tài liệu, chuyển sang Web Search...")
+            try:
+                from ddgs import DDGS
+                ddgs = DDGS()
+                results = ddgs.text(question, max_results=limit)
+                if results:
+                    for i, r in enumerate(results):
+                        chunks.append({
+                            "vector_id": f"web-{i}",
+                            "content": r["body"] + f" (Nguồn: {r['href']})",
+                            "document_id": None,
+                            "chunk_id": None,
+                            "chunk_index": i,
+                            "page_number": None,
+                            "score": 0.99,
+                            "document_filename": r["title"]
+                        })
+            except Exception as e:
+                print(f"Lỗi Web Search: {e}")
+
         context_parts: list[str] = []
         sources: list[dict[str, Any]] = []
 
@@ -565,6 +586,34 @@ TRẢ LỜI:
             "answer": answer_text,
             "sources": sources,
         }
+
+    def answer_stream(
+        self,
+        question: str,
+        document_id: int | None = None,
+        limit: int = 5,
+        min_score: float = 0.30,
+        conversation_history: str = "",
+    ):
+        result = self.prepare(
+            question=question,
+            document_id=document_id,
+            limit=limit,
+            min_score=min_score,
+            conversation_history=conversation_history,
+        )
+
+        sources = result.get("sources", [])
+        prompt = result.get("prompt", "")
+
+        yield {"type": "metadata", "sources": sources}
+
+        if not sources or not prompt:
+            yield {"type": "chunk", "content": INSUFFICIENT_INFORMATION_MESSAGE}
+            return
+
+        for chunk in llm_service.stream_answer(prompt=prompt):
+            yield {"type": "chunk", "content": chunk}
 
 
 rag_pipeline = RAGPipeline()

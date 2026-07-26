@@ -197,6 +197,14 @@ def filter_valid_sources(
         document_id = source.get("document_id")
         chunk_id = source.get("chunk_id")
 
+        # Cho phép nguồn từ Web Search (không có document_id)
+        if document_id is None and str(source.get("vector_id", "")).startswith("web-"):
+            valid_source = source.copy()
+            valid_source["document_title"] = source.get("document_filename") or "Kết quả Web"
+            valid_source["document_filename"] = source.get("document_filename") or "Kết quả Web"
+            valid_sources.append(valid_source)
+            continue
+
         if document_id not in document_map:
             continue
 
@@ -237,315 +245,127 @@ def filter_valid_sources(
     return valid_sources
 
 
-@router.post(
-    "",
-    response_model=ChatResponse,
-)
+from fastapi.responses import StreamingResponse
+import json
+
+@router.post("")
 def ask_question(
     request: ChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(
-        get_current_user
-    ),
-) -> ChatResponse:
-    """
-    Nhận câu hỏi, gọi RAG, lưu lịch sử và trả về
-    thông tin thống kê phục vụ giao diện Chat Pro.
-    """
-
+    current_user: User = Depends(get_current_user),
+):
     request_started_at = perf_counter()
-
-    question = " ".join(
-        request.question.strip().split()
-    )
+    question = " ".join(request.question.strip().split())
 
     if not question:
-        raise HTTPException(
-            status_code=400,
-            detail="Câu hỏi không được để trống.",
-        )
+        raise HTTPException(status_code=400, detail="Câu hỏi không được để trống.")
 
     if request.limit <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="limit phải lớn hơn 0.",
-        )
+        raise HTTPException(status_code=400, detail="limit phải lớn hơn 0.")
 
     if request.document_id is not None:
-        get_user_document(
-            db=db,
-            document_id=request.document_id,
+        get_user_document(db=db, document_id=request.document_id, user_id=current_user.id)
+
+    # 1. Conversation
+    if request.conversation_id is None:
+        conversation = Conversation(
             user_id=current_user.id,
+            title=create_conversation_title(question),
         )
-
-    try:
-        # =================================================
-        # 1. Tạo hoặc lấy cuộc trò chuyện
-        # =================================================
-
-        if request.conversation_id is None:
-            conversation = Conversation(
-                user_id=current_user.id,
-                title=create_conversation_title(
-                    question
-                ),
-            )
-
-            db.add(conversation)
-            db.flush()
-
-        else:
-            conversation = get_user_conversation(
-                db=db,
-                conversation_id=(
-                    request.conversation_id
-                ),
-                user_id=current_user.id,
-            )
-
-        # =================================================
-        # 2. Lưu câu hỏi người dùng
-        # =================================================
-
-        user_message = Message(
-            conversation_id=conversation.id,
-            role="user",
-            content=question,
-        )
-
-        db.add(user_message)
+        db.add(conversation)
         db.flush()
+    else:
+        conversation = get_user_conversation(db=db, conversation_id=request.conversation_id, user_id=current_user.id)
 
-        # =================================================
-        # 2.5 Lấy lịch sử hội thoại gần đây
-        # =================================================
+    # 2. User Message
+    user_message = Message(conversation_id=conversation.id, role="user", content=question)
+    db.add(user_message)
+    db.flush()
 
-        conversation_history = ""
-        if request.conversation_id is not None:
-            recent_messages = (
-                db.query(Message)
-                .filter(
-                    Message.conversation_id
-                    == conversation.id,
-                )
-                .order_by(
-                    Message.created_at.desc()
-                )
-                .limit(
-                    settings.max_conversation_history
-                )
-                .all()
-            )
+    # 2.5 History
+    conversation_history = ""
+    if request.conversation_id is not None:
+        recent_messages = db.query(Message).filter(Message.conversation_id == conversation.id).order_by(Message.created_at.desc()).limit(settings.max_conversation_history).all()
+        recent_messages.reverse()
+        if recent_messages:
+            history_parts = []
+            for msg in recent_messages:
+                role_label = "Người dùng" if msg.role == "user" else "Trợ lý"
+                history_parts.append(f"{role_label}: {msg.content}")
+            conversation_history = "\n".join(history_parts)
 
-            recent_messages.reverse()
-
-            if recent_messages:
-                history_parts = []
-                for msg in recent_messages:
-                    role_label = (
-                        "Người dùng"
-                        if msg.role == "user"
-                        else "Trợ lý"
+    # Prepare Assistant Message (empty content initially)
+    assistant_message = Message(conversation_id=conversation.id, role="assistant", content="")
+    db.add(assistant_message)
+    db.flush()
+    db.commit() # commit to get IDs safely for frontend
+    
+    def event_generator():
+        full_answer = []
+        final_sources = []
+        
+        try:
+            for item in rag_pipeline.answer_stream(
+                question=question,
+                document_id=request.document_id,
+                limit=request.limit,
+                conversation_history=conversation_history
+            ):
+                if item["type"] == "metadata":
+                    raw_sources = item.get("sources", [])
+                    valid_sources = filter_valid_sources(db=db, retrieved_sources=raw_sources, user_id=current_user.id)
+                    final_sources = valid_sources
+                    
+                    # Trả về metadata cho frontend
+                    meta_payload = {
+                        "type": "metadata",
+                        "conversation_id": conversation.id,
+                        "message_id": assistant_message.id,
+                        "sources": valid_sources,
+                        "model": llm_service.model
+                    }
+                    yield f"data: {json.dumps(meta_payload)}\n\n"
+                    
+                elif item["type"] == "chunk":
+                    chunk_content = item.get("content", "")
+                    full_answer.append(chunk_content)
+                    
+                    chunk_payload = {
+                        "type": "chunk",
+                        "content": chunk_content
+                    }
+                    yield f"data: {json.dumps(chunk_payload)}\n\n"
+            
+            # Kết thúc stream, lưu vào DB
+            final_text = "".join(full_answer).strip()
+            
+            # Re-fetch objects to avoid detached instance errors
+            db_msg = db.query(Message).filter(Message.id == assistant_message.id).first()
+            if db_msg:
+                db_msg.content = final_text
+                
+                for index, source in enumerate(final_sources, start=1):
+                    msg_source = MessageSource(
+                        message_id=db_msg.id,
+                        source_number=source.get("source_number", index),
+                        vector_id=source.get("vector_id"),
+                        document_id=source.get("document_id"),
+                        chunk_id=source.get("chunk_id"),
+                        chunk_index=source.get("chunk_index"),
+                        page_number=source.get("page_number"),
+                        score=source.get("score"),
+                        content=source.get("content", "")
                     )
-                    history_parts.append(
-                        f"{role_label}: {msg.content}"
-                    )
-                conversation_history = (
-                    "\n".join(history_parts)
-                )
-
-        # =================================================
-        # 3. Chạy RAG Pipeline
-        # =================================================
-
-        result = rag_pipeline.answer(
-            question=question,
-            document_id=request.document_id,
-            limit=request.limit,
-            conversation_history=conversation_history,
-        )
-
-        if not isinstance(result, dict):
-            raise RuntimeError(
-                "RAG Pipeline trả về dữ liệu "
-                "không hợp lệ."
-            )
-
-        answer_text = str(
-            result.get(
-                "answer",
-                "",
-            )
-        ).strip()
-
-        retrieved_sources = result.get(
-            "sources",
-            [],
-        )
-
-        if not isinstance(
-            retrieved_sources,
-            list,
-        ):
-            retrieved_sources = []
-
-        # =================================================
-        # 4. Lọc nguồn hợp lệ theo người dùng
-        # =================================================
-
-        sources = filter_valid_sources(
-            db=db,
-            retrieved_sources=retrieved_sources,
-            user_id=current_user.id,
-        )
-
-        if retrieved_sources and not sources:
-            answer_text = (
-                "Tài liệu hiện tại chưa cung cấp "
-                "đủ thông tin để trả lời câu hỏi này."
-            )
-
-        if not answer_text:
-            answer_text = (
-                "Tài liệu hiện tại chưa cung cấp "
-                "đủ thông tin để trả lời câu hỏi này."
-            )
-
-        # =================================================
-        # 5. Lưu câu trả lời của AI
-        # =================================================
-
-        assistant_message = Message(
-            conversation_id=conversation.id,
-            role="assistant",
-            content=answer_text,
-        )
-
-        db.add(assistant_message)
-        db.flush()
-
-        # =================================================
-        # 6. Lưu nguồn tham khảo
-        # =================================================
-
-        for index, source in enumerate(
-            sources,
-            start=1,
-        ):
-            message_source = MessageSource(
-                message_id=assistant_message.id,
-                source_number=source.get(
-                    "source_number",
-                    index,
-                ),
-                vector_id=source.get(
-                    "vector_id"
-                ),
-                document_id=source.get(
-                    "document_id"
-                ),
-                chunk_id=source.get(
-                    "chunk_id"
-                ),
-                chunk_index=source.get(
-                    "chunk_index"
-                ),
-                page_number=source.get(
-                    "page_number"
-                ),
-                score=source.get("score"),
-                content=source.get(
-                    "content",
-                    "",
-                ),
-            )
-
-            db.add(message_source)
-
-        # =================================================
-        # 7. Cập nhật cuộc trò chuyện
-        # =================================================
-
-        conversation.updated_at = datetime.now(
-            timezone.utc
-        )
-
-        db.commit()
-
-        db.refresh(conversation)
-        db.refresh(assistant_message)
-
-        # =================================================
-        # 8. Tính thống kê thật
-        # =================================================
-
-        response_time_seconds = round(
-            perf_counter() - request_started_at,
-            2,
-        )
-
-        chunk_count = len(sources)
-
-        used_document_ids = {
-            source.get("document_id")
-            for source in sources
-            if source.get("document_id")
-            is not None
-        }
-
-        document_count = len(
-            used_document_ids
-        )
-
-        # =================================================
-        # 9. Trả dữ liệu cho frontend
-        # =================================================
-
-        return ChatResponse(
-            conversation_id=conversation.id,
-            message_id=assistant_message.id,
-            answer=answer_text,
-            sources=sources,
-            response_time_seconds=(
-                response_time_seconds
-            ),
-            chunk_count=chunk_count,
-            document_count=document_count,
-            model=llm_service.model,
-            temperature=(
-                llm_service.temperature
-            ),
-        )
-
-    except HTTPException:
-        db.rollback()
-        raise
-
-    except ValueError as error:
-        db.rollback()
-
-        raise HTTPException(
-            status_code=400,
-            detail=str(error),
-        ) from error
-
-    except RuntimeError as error:
-        db.rollback()
-
-        raise HTTPException(
-            status_code=503,
-            detail=str(error),
-        ) from error
-
-    except Exception as error:
-        db.rollback()
-
-        print(
-            "Lỗi Chat API: "
-            f"{type(error).__name__}: {error}"
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail="Không thể xử lý câu hỏi.",
-        ) from error
+                    db.add(msg_source)
+                
+            db_conv = db.query(Conversation).filter(Conversation.id == conversation.id).first()
+            if db_conv:
+                db_conv.updated_at = datetime.now(timezone.utc)
+                
+            db.commit()
+            
+        except Exception as e:
+            print(f"Streaming error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'content': 'Lỗi server'})}\n\n"
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
